@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Contact Sheet</title>
+    <style>
+      body {
+        color: #444;
+        font-family: sans-serif;
+        line-height: 1.4em;
+        margin: 0;
+        padding: 0;
+      }
+      .receipt {
+        border-color: #aaa #ddd;
+        border-style: dotted solid;
+        border-width: 2px 1px;
+        box-shadow: 0 0.1em 1em hsla(0, 0%, 0%, 0.2);
+        margin: 2em auto;
+        max-width: 22em;
+        padding: 4em 1em 6em;
+      }
+      .receipt h1 {
+        margin: 0 0 1em;
+        text-align: center;
+      }
+      input, button {
+        border-color: #444;
+        border-width: 2px;
+        font: inherit;
+        line-height: 1em;
+        padding: 0.3em 0.6em;
+      }
+      input {
+        background: hsl(290, 100%, 95%);
+        border-style: dashed;
+        border-width: 0 0 2px;
+        color: #222;
+      }
+      input:hover,
+      input:focus {
+        background: hsl(290, 100%, 91%);
+      }
+      button {
+        background: transparent;
+        border-radius: 0.2em;
+        cursor: pointer;
+      }
+      .login-form {
+        display: flex;
+      }
+      .login-form input {
+        flex: 1 1 75%;
+        margin-right: 1em;
+        min-width: 3em;
+      }
+      .login-form button {
+        flex: 1 0 25%;
+      }
+      small {
+        font-weight: normal;
+        color: #888;
+      }
+      .contact {
+        margin: 1em 0;
+      }
+      .contact h3 {
+        margin: 0;
+      }
+      .contact p {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="receipt">
+      <h1>Contact Sheet</h1>
+      {% block content %}
+      {% endblock content %}
+    </div>
+  </body>
+</html>

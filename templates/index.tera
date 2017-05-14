@@ -1,0 +1,13 @@
+{% extends "base" %}
+
+{% block content %}
+  <p>Don't be stuck if you lose or break your phone.</p>
+  <p>Get a super-thin hard copy of your most important contacts to keep in your wallet.</p>
+  <p>You'll receive a friendly reminder email every three months to make sure your contacts are up to date, and a fresh hard copy in the mail shortly after.</p>
+  <p><strong>The cost is $1 per month.</strong></p>
+  <p>To get started, or to sign into an existing account, enter your email address:</p>
+  <form action="/login" method="post" class="login-form">
+    <input id="email" type="email" name="email" placeholder="you@example.com" />
+    <button type="submit">Go</button>
+  </form>
+{% endblock content %}

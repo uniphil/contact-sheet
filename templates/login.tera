@@ -1,0 +1,5 @@
+{% extends "base" %}
+
+{% block content %}
+  <p>We just sent an email to <strong><code>{{ email }}</code></strong> with a link to finish logging in.</p>
+{% endblock content %}
