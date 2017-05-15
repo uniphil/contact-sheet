@@ -16,15 +16,17 @@ rocket_codegen = "0.2.6"
 [dependencies.rocket_contrib]
 version = "*"
 default-features = false
-features = ["tera_templates"]
+features = ["tera_templates", "uuid"]
 
 [dependencies.diesel]
-version = "0.11.0"
+version = "0.11"
+# todo: network-address feature when it's released in 0.12
 features = ["postgres", "uuid", "chrono"]
 
 [dependencies.diesel_codegen]
-version = "0.11.0"
+version = "0.11"
 features = ["postgres"]
 
 [dependencies.uuid]
 version = "0.4"
+features = ["v4"]

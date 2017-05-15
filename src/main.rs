@@ -18,7 +18,8 @@ use rocket::Outcome::{Success, Failure};
 use rocket::Request;
 use rocket::http::{Cookie, Cookies, Status};
 use rocket::request::{Form, FromRequest, Outcome};
-use rocket_contrib::Template;
+use rocket::response::Redirect;
+use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
 
 
@@ -83,25 +84,84 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
         }
     };
 
-    // contacts::send_welcome(email_);
+    {
+        use diesel::prelude::*;
+        use contacts::schema::sessions;
+        use contacts::models::{NewSession, Session};
+        let new_session = NewSession {
+            account: me.id,
+        };
+        let session: Session = diesel::insert(&new_session).into(sessions::table)
+            .get_result(db.conn())
+            .expect("error creating session");
 
-    if let Some(ref cookie) = cookies.find("email") {
-        println!("welcome back, {}", cookie.value());
-    } else {
-        println!("welcome noob");
-        let cookie = Cookie::build("email", email.clone())
-            // .domain(blah)
-            .path("/")
-            // .secure(true)
-            .http_only(true)
-            .finish();
-        cookies.add(cookie);
+        contacts::send_login(email, &session.login_key, new);
     }
+
+    // if let Some(ref cookie) = cookies.find("email") {
+    //     println!("welcome back, {}", cookie.value());
+    // } else {
+    //     println!("welcome noob");
+    //     let cookie = Cookie::build("email", email.clone())
+    //         // .domain(blah)
+    //         .path("/")
+    //         // .secure(true)
+    //         .http_only(true)
+    //         .finish();
+    //     cookies.add(cookie);
+    // }
 
     let mut context = HashMap::new();
     context.insert("email", email);
 
     Template::render("login", &context)
+}
+
+
+#[derive(Debug, FromForm)]
+struct LoginKey {
+    key: UUID,
+}
+
+
+#[get("/login?<form>")]
+fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, String> {
+    let LoginKey { ref key } = form;
+
+    // if we are in auth flow, kill whatever session may exist
+    cookies.remove("session");
+
+    {
+        use diesel::prelude::*;
+        use contacts::schema::sessions;
+        use contacts::schema::sessions::dsl::*;
+        use contacts::models::Session;
+
+        let res = sessions.find(key.into_inner()).load::<Session>(db.conn()).expect("blah");
+
+        if let Some(session) = res.first() {
+            if let Some(id) = session.session_id {
+                return Err("already got this session whoops".to_string())
+            } else {
+                let logged_in = session.login();
+                logged_in.save_changes::<Session>(db.conn());
+                let id = logged_in.session_id.unwrap().hyphenated().to_string();
+                let cookie = Cookie::build("session", id)
+                    // .domain(blah)
+                    .path("/")
+                    // .secure(true)
+                    .http_only(true)
+                    .finish();
+                cookies.add(cookie);
+                return Ok(Redirect::to("/woo"))
+            }
+        } else {
+            println!("oooh {:?}", "asdf");
+        }
+
+    }
+
+    Err("asdf".to_string())
 }
 
 
@@ -113,5 +173,7 @@ fn index() -> Template {
 
 
 fn main() {
-    rocket::ignite().mount("/", routes![index, login]).launch();
+    rocket::ignite()
+        .mount("/", routes![index, login, finish_login])
+        .launch();
 }

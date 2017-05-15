@@ -16,13 +16,8 @@ use r2d2::{ Pool, Config };
 use r2d2_diesel::ConnectionManager;
 use reqwest::Client;
 use std::env;
+use uuid::Uuid;
 // use std::io::Read;
-
-
-// enum AccountStatus {
-//     New,
-//     Existing,
-// }
 
 
 pub fn create_db_pool() -> Pool<ConnectionManager<PgConnection>> {
@@ -36,20 +31,17 @@ pub fn create_db_pool() -> Pool<ConnectionManager<PgConnection>> {
 }
 
 
-// pub fn create_activation(email: &str) -> {
-
-// }
-
-
-pub fn send_welcome(to: &str) -> () {
+pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> () {
     dotenv().ok();
     let mg_url = env::var("MAILGUN_URL").expect("MAILGUN_URL must be set");
     let mg_key = env::var("MAILGUN_KEY").expect("MAILGUN_KEY must be set");
+    let subject = if new { "Get started with Contact Sheet" }
+                    else { "Log in to Contact Sheet" };
     let params = [
-        ("from", "uniphil@gmail.com"),
+        ("from", "no-reply@email.contact-sheet.ca"),
         ("to", to),
-        ("subject", "eyo"),
-        ("text", "hey sup"),
+        ("subject", subject),
+        ("text", &format!("Here is your key: {}", login_key)),
     ];
     let client = Client::new().unwrap();
     let res = client.post(&format!("{}{}", mg_url, "/messages"))

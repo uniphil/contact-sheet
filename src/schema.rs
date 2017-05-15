@@ -1,6 +1,3 @@
-infer_table_from_schema!("dotenv:DATABASE_URL", "hello");
-
-
 // infer_schema! doesn't yet support citext, bleh
 // https://gitter.im/diesel-rs/diesel/archives/2016/07/24
 table! {
@@ -12,3 +9,5 @@ table! {
         disabled -> Bool,
     }
 }
+
+infer_table_from_schema!("dotenv:DATABASE_URL", "sessions");
