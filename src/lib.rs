@@ -12,7 +12,7 @@ pub mod models;
 
 use dotenv::dotenv;
 use diesel::pg::PgConnection;
-use r2d2::{ Pool, Config };
+use r2d2::{Pool, Config};
 use r2d2_diesel::ConnectionManager;
 use reqwest::Client;
 use std::env;

@@ -180,20 +180,18 @@ impl<'a, 'r> FromRequest<'a, 'r> for Me {
 
         if let Some(claimed_uuid) = claimed_id {
             use diesel::prelude::*;
+            use contacts::schema::sessions;
             use contacts::schema::people::dsl::*;
             use contacts::schema::sessions::dsl::*;
             use contacts::models::{Person, Session};
             let db = DB(DB_POOL.get().expect("couldn't get db"));
 
-            let session_res = sessions.filter(session_id.eq(claimed_uuid))
-                .first::<Session>(db.conn());
+            let data = people.inner_join(sessions::table)
+                .filter(session_id.eq(claimed_uuid))
+                .first::<(Person, Session)>(db.conn());
 
-            if let Ok(session) = session_res {
-                let me_res = people.find(session.account)
-                    .first::<Person>(db.conn());
-                if let Ok(me) = me_res {
-                    return Success(Me(me))
-                }
+            if let Ok((me, _)) = data {
+                return Success(Me(me));
             }
         }
 
