@@ -4,7 +4,9 @@ use chrono::naive::datetime::NaiveDateTime;
 use super::schema::{people, sessions};
 
 
-#[derive(Queryable, Clone, Debug)]
+#[derive(Queryable, Associations, Identifiable, Clone, Debug)]
+#[table_name="people"]
+#[has_many(sessions, foreign_key="account")]
 pub struct Person {
     pub id: Uuid,
     pub created: NaiveDateTime,

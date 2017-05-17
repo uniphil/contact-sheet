@@ -14,13 +14,15 @@ use std::collections::HashMap;
 use diesel::pg::PgConnection;
 use r2d2::{Pool, PooledConnection, GetTimeout};
 use r2d2_diesel::ConnectionManager;
-use rocket::Outcome::{Success, Failure};
+use rocket::Outcome::{Success, Failure, Forward};
 use rocket::Request;
 use rocket::http::{Cookie, Cookies, Status};
 use rocket::request::{Form, FromRequest, Outcome};
 use rocket::response::Redirect;
 use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
+
+use contacts::models::{Person};
 
 
 lazy_static! {
@@ -133,7 +135,6 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, S
 
     {
         use diesel::prelude::*;
-        use contacts::schema::sessions;
         use contacts::schema::sessions::dsl::*;
         use contacts::models::Session;
 
@@ -144,7 +145,7 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, S
                 return Err("already got this session whoops".to_string())
             } else {
                 let logged_in = session.login();
-                logged_in.save_changes::<Session>(db.conn());
+                logged_in.save_changes::<Session>(db.conn()).expect("failed to save login");
                 let id = logged_in.session_id.unwrap().hyphenated().to_string();
                 let cookie = Cookie::build("session", id)
                     // .domain(blah)
@@ -165,7 +166,49 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, S
 }
 
 
+#[derive(Debug)]
+struct Me(Person);
+
+impl<'a, 'r> FromRequest<'a, 'r> for Me {
+    type Error = ();
+
+    fn from_request(request: &'a Request<'r>) -> Outcome<Me, ()> {
+        let claimed_id: Option<Uuid> = request
+            .cookies()
+            .find("session")
+            .and_then(|cookie| cookie.value().parse().ok());
+
+        if let Some(claimed_uuid) = claimed_id {
+            use diesel::prelude::*;
+            use contacts::schema::people::dsl::*;
+            use contacts::schema::sessions::dsl::*;
+            use contacts::models::{Person, Session};
+            let db = DB(DB_POOL.get().expect("couldn't get db"));
+
+            let session_res = sessions.filter(session_id.eq(claimed_uuid))
+                .first::<Session>(db.conn());
+
+            if let Ok(session) = session_res {
+                let me_res = people.find(session.account)
+                    .first::<Person>(db.conn());
+                if let Ok(me) = me_res {
+                    return Success(Me(me))
+                }
+            }
+        }
+
+        Forward(())
+    }
+}
+
+
 #[get("/")]
+fn home(me: Me) -> String {
+    format!("whee! {:?}", me)
+}
+
+
+#[get("/", rank = 2)]
 fn index() -> Template {
     let nothing: HashMap<(), ()> = HashMap::new();
     Template::render("index", &nothing)
@@ -174,6 +217,6 @@ fn index() -> Template {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, login, finish_login])
+        .mount("/", routes![index, login, finish_login, home])
         .launch();
 }
