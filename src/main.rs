@@ -154,7 +154,7 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, S
                     .http_only(true)
                     .finish();
                 cookies.add(cookie);
-                return Ok(Redirect::to("/woo"))
+                return Ok(Redirect::to("/"))
             }
         } else {
             println!("oooh {:?}", "asdf");
@@ -201,8 +201,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for Me {
 
 
 #[get("/")]
-fn home(me: Me) -> String {
-    format!("whee! {:?}", me)
+fn home(me: Me) -> Template {
+    let mut context = HashMap::new();
+    context.insert("email", me.0.email);
+    Template::render("home", &context)
 }
 
 
@@ -213,8 +215,15 @@ fn index() -> Template {
 }
 
 
+#[get("/logout")]
+fn logout(cookies: &Cookies) -> Redirect {
+    cookies.remove("session");
+    Redirect::to("/")
+}
+
+
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, login, finish_login, home])
+        .mount("/", routes![index, login, finish_login, home, logout])
         .launch();
 }

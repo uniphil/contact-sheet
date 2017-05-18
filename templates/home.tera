@@ -1,0 +1,5 @@
+{% extends "session-base" %}
+
+{% block content %}
+  <p>your contacts</p>
+{% endblock content %}

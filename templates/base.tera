@@ -11,6 +11,11 @@
         margin: 0;
         padding: 0;
       }
+      nav {
+        display: flex;
+        width: 100%;
+        justify-content: center;
+      }
       .receipt {
         border-color: #aaa #ddd;
         border-style: dotted solid;
@@ -73,6 +78,12 @@
     </style>
   </head>
   <body>
+    {% if email %}
+      <nav>
+        <span>{{ email }}</span>
+        <a href="/logout">log out</a>
+      </nav>
+    {% endif %}
     <div class="receipt">
       <h1>Contact Sheet</h1>
       {% block content %}

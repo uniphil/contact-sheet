@@ -35,13 +35,14 @@ pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> () {
     dotenv().ok();
     let mg_url = env::var("MAILGUN_URL").expect("MAILGUN_URL must be set");
     let mg_key = env::var("MAILGUN_KEY").expect("MAILGUN_KEY must be set");
+    let host = "http://localhost:8000";
     let subject = if new { "Get started with Contact Sheet" }
                     else { "Log in to Contact Sheet" };
     let params = [
         ("from", "no-reply@email.contact-sheet.ca"),
         ("to", to),
         ("subject", subject),
-        ("text", &format!("Here is your key: {}", login_key)),
+        ("text", &format!("Here is your key: {}/login?key={}", host, login_key)),
     ];
     let client = Client::new().unwrap();
     let res = client.post(&format!("{}{}", mg_url, "/messages"))
