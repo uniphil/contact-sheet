@@ -11,3 +11,15 @@ table! {
 }
 
 infer_table_from_schema!("dotenv:DATABASE_URL", "sessions");
+
+// copy-pasted from `$ diesel print-schema` because more than one
+// infer_table_from_schema breaks :(
+table! {
+    contacts (id) {
+        id -> Uuid,
+        created -> Timestamp,
+        account -> Uuid,
+        name -> Text,
+        info -> Text,
+    }
+}

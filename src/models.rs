@@ -7,6 +7,7 @@ use super::schema::{people, sessions};
 #[derive(Queryable, Associations, Identifiable, Clone, Debug)]
 #[table_name="people"]
 #[has_many(sessions, foreign_key="account")]
+#[has_many(contacts, foreign_key="account")]
 pub struct Person {
     pub id: Uuid,
     pub created: NaiveDateTime,
@@ -49,4 +50,25 @@ impl Session {
 pub struct NewSession {
     pub account: Uuid,
     // pub login_ua: &'a str,
+}
+
+
+#[derive(Queryable, Associations, Identifiable, Debug)]
+#[table_name="contacts"]
+#[belongs_to(Person)]
+pub struct Contact {
+    pub id: Uuid,
+    pub created: NaiveDateTime,
+    pub account: Uuid,
+    pub name: String,
+    pub info: String,
+}
+
+
+#[derive(Insertable)]
+#[table_name="contacts"]
+pub struct NewContact<'a> {
+    pub account: Uuid,
+    pub name: &'a str,
+    pub info: &'a str,
 }
