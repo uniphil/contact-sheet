@@ -1,7 +1,7 @@
 use uuid::Uuid;
 use chrono::naive::datetime::NaiveDateTime;
 
-use super::schema::{people, sessions};
+use super::schema::{people, sessions, contacts};
 
 
 #[derive(Queryable, Associations, Identifiable, Clone, Debug)]

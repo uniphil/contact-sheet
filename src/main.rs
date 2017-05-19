@@ -2,11 +2,13 @@
 #![plugin(rocket_codegen)]
 
 #[macro_use] extern crate lazy_static;
+#[macro_use] extern crate serde_derive;
 extern crate diesel;
 extern crate r2d2;
 extern crate r2d2_diesel;
 extern crate rocket;
 extern crate rocket_contrib;
+extern crate serde;
 extern crate uuid;
 extern crate contacts;
 
@@ -100,19 +102,6 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
         contacts::send_login(email, &session.login_key, new);
     }
 
-    // if let Some(ref cookie) = cookies.find("email") {
-    //     println!("welcome back, {}", cookie.value());
-    // } else {
-    //     println!("welcome noob");
-    //     let cookie = Cookie::build("email", email.clone())
-    //         // .domain(blah)
-    //         .path("/")
-    //         // .secure(true)
-    //         .http_only(true)
-    //         .finish();
-    //     cookies.add(cookie);
-    // }
-
     let mut context = HashMap::new();
     context.insert("email", email);
 
@@ -199,11 +188,16 @@ impl<'a, 'r> FromRequest<'a, 'r> for Me {
     }
 }
 
+#[derive(Serialize)]
+struct Blah<'a> {
+    email: &'a str,
+}
 
 #[get("/")]
 fn home(me: Me) -> Template {
-    let mut context = HashMap::new();
-    context.insert("email", me.0.email);
+    let context = Blah {
+        email: &me.0.email,
+    };
     Template::render("home", &context)
 }
 
