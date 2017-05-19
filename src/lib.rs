@@ -37,7 +37,7 @@ pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> () {
     dotenv().ok();
     let mg_url = env::var("MAILGUN_URL").expect("MAILGUN_URL must be set");
     let mg_key = env::var("MAILGUN_KEY").expect("MAILGUN_KEY must be set");
-    let host = "http://localhost:8000";
+    let host = env::var("HOST").expect("HOST must be set");
     let subject = if new { "Get started with Contact Sheet" }
                     else { "Log in to Contact Sheet" };
     let params = [
