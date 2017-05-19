@@ -25,7 +25,7 @@ pub struct NewPerson<'a> {
 
 #[derive(Queryable, Associations, Identifiable, AsChangeset, Insertable, Clone, Debug)]
 #[table_name="sessions"]
-#[belongs_to(Person)]
+#[belongs_to(Person, foreign_key="account")]
 #[primary_key(login_key)]
 pub struct Session {
     pub login_key: Uuid,
@@ -55,7 +55,7 @@ pub struct NewSession {
 
 #[derive(Queryable, Associations, Identifiable, Serialize, Debug)]
 #[table_name="contacts"]
-#[belongs_to(Person)]
+#[belongs_to(Person, foreign_key="account")]
 pub struct Contact {
     pub id: Uuid,
     pub created: NaiveDateTime,
@@ -65,7 +65,7 @@ pub struct Contact {
 }
 
 
-#[derive(Insertable)]
+#[derive(Insertable, Debug)]
 #[table_name="contacts"]
 pub struct NewContact<'a> {
     pub account: Uuid,

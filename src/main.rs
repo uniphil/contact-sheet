@@ -57,7 +57,7 @@ struct Email {
 }
 
 
-#[post("/login", data = "<form>")]
+#[post("/login", data="<form>")]
 fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
     let &Email { ref email } = form.get();
     let email_ = email;
@@ -188,17 +188,52 @@ impl<'a, 'r> FromRequest<'a, 'r> for Me {
     }
 }
 
+
+#[derive(Debug, FromForm)]
+struct NewContactForm {
+    name: String,
+    info: String,
+}
+
+
+#[post("/contacts", data="<form>")]
+fn new_contact(form: Form<NewContactForm>, me: Me, db: DB) ->
+Result<Redirect, String> {
+    use diesel::prelude::*;
+    use contacts::schema::contacts;
+    use contacts::models::NewContact;
+
+    let &NewContactForm { ref name, ref info } = form.get();
+
+    let new_contact = NewContact {
+        account: me.0.id,
+        name,
+        info,
+    };
+
+    diesel::insert(&new_contact)
+        .into(contacts::table)
+        .get_result(db.conn())
+        .and_then(|contact: Contact| Ok(Redirect::to("/")))
+        .or_else(|_| Err("could not save contact".into()))
+}
+
+
 #[derive(Serialize)]
 struct HomeData<'a> {
     email: &'a str,
-    contacts: &'a [&'a Contact],
+    contacts: &'a [Contact],
 }
 
 #[get("/")]
-fn home(me: Me) -> Template {
+fn home(me: Me, db: DB) -> Template {
+    use diesel::prelude::*;
+    let contacts: Vec<Contact> = Contact::belonging_to(&(me.0))
+            .load(db.conn())
+            .expect("could not load contacts");
     let context = HomeData {
         email: &me.0.email,
-        contacts: &[],
+        contacts: &contacts,
     };
     Template::render("home", &context)
 }
@@ -220,6 +255,6 @@ fn logout(cookies: &Cookies) -> Redirect {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, login, finish_login, home, logout])
+        .mount("/", routes![index, login, finish_login, home, logout, new_contact])
         .launch();
 }

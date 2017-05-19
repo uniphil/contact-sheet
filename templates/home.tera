@@ -2,4 +2,23 @@
 
 {% block content %}
   <p>your contacts</p>
+  {% for contact in contacts %}
+    <p>
+      {{ contact.name }}: {{ contact.info }}
+    </p>
+  {% endfor %}
+  <form method="post" action="/contacts">
+    <h3>Add a contact</h3>
+    <p>
+      <label>
+        Name <input id="name" name="name" />
+      </label>
+    </p>
+    <p>
+      <label>
+        Info <input id="info" name="info" />
+      </label>
+    </p>
+    <button type="submit">Add</button>
+  </form>
 {% endblock content %}
