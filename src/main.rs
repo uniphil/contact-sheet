@@ -24,7 +24,7 @@ use rocket::response::Redirect;
 use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
 
-use contacts::models::{Person};
+use contacts::models::{Person, Contact};
 
 
 lazy_static! {
@@ -189,14 +189,16 @@ impl<'a, 'r> FromRequest<'a, 'r> for Me {
 }
 
 #[derive(Serialize)]
-struct Blah<'a> {
+struct HomeData<'a> {
     email: &'a str,
+    contacts: &'a [&'a Contact],
 }
 
 #[get("/")]
 fn home(me: Me) -> Template {
-    let context = Blah {
+    let context = HomeData {
         email: &me.0.email,
+        contacts: &[],
     };
     Template::render("home", &context)
 }

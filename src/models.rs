@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use chrono::naive::datetime::NaiveDateTime;
+use uuid::Uuid;
 
 use super::schema::{people, sessions, contacts};
 
@@ -53,7 +53,7 @@ pub struct NewSession {
 }
 
 
-#[derive(Queryable, Associations, Identifiable, Debug)]
+#[derive(Queryable, Associations, Identifiable, Serialize, Debug)]
 #[table_name="contacts"]
 #[belongs_to(Person)]
 pub struct Contact {
