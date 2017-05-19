@@ -7,3 +7,6 @@ bin/
 
 # local postgres data
 dev/
+
+# don't track dotenv
+.env
