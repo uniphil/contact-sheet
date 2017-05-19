@@ -76,7 +76,7 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
             .expect("couldn't query people");
 
         if let Some(me) = res.first() {
-            (me.clone(), true)
+            (me.clone(), false)
         } else {
             let new_me = NewPerson {
                 email: email_,
@@ -84,7 +84,7 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
             let me: Person = diesel::insert(&new_me).into(people::table)
                 .get_result(db.conn())
                 .expect("error saving me");
-            (me, false)
+            (me, true)
         }
     };
 
