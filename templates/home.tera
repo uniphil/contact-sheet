@@ -4,7 +4,7 @@
   <p>your contacts</p>
   {% for contact in contacts %}
     <p>
-      {{ contact.name }}: {{ contact.info }}
+      {{ contact.name }}: {{ contact.info }} <a href="/contacts/delete?id={{ contact.id }}&next={{ current_path }}">&times;</a>
     </p>
   {% endfor %}
   <form method="post" action="/contacts">

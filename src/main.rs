@@ -131,7 +131,7 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, S
 
         if let Some(session) = res.first() {
             if let Some(id) = session.session_id {
-                return Err("already got this session whoops".to_string())
+                return Err(format!("already got this session {} whoops", id))
             } else {
                 let logged_in = session.login();
                 logged_in.save_changes::<Session>(db.conn()).expect("failed to save login");
@@ -213,9 +213,35 @@ Result<Redirect, String> {
 
     diesel::insert(&new_contact)
         .into(contacts::table)
-        .get_result(db.conn())
-        .and_then(|contact: Contact| Ok(Redirect::to("/")))
+        .execute(db.conn())
+        .and_then(|_| Ok(Redirect::to("/")))
         .or_else(|_| Err("could not save contact".into()))
+}
+
+
+#[derive(Debug, FromForm)]
+struct DeleteContactForm {
+    id: UUID,
+    next: Option<String>,
+}
+
+
+#[get("/contacts/delete?<form>")]
+fn delete_contact(form: DeleteContactForm, me: Me, db: DB) ->
+Result<Redirect, String> {
+    use diesel::prelude::*;
+    use contacts::schema::contacts::dsl::*;
+
+    let DeleteContactForm { id: id_, next } = form;
+
+    diesel::delete(contacts.filter(account.eq(me.0.id).and(id.eq(*id_))))
+        .execute(db.conn())
+        .or_else(|_| Err("Could not delete contact".into()))
+        .and_then(|num| if num == 1 {
+            Ok(Redirect::to(&next.unwrap_or("/".into())))
+        } else {
+            Err("no contact found".into())
+        })
 }
 
 
@@ -223,6 +249,7 @@ Result<Redirect, String> {
 struct HomeData<'a> {
     email: &'a str,
     contacts: &'a [Contact],
+    current_path: &'a str,
 }
 
 #[get("/")]
@@ -234,6 +261,7 @@ fn home(me: Me, db: DB) -> Template {
     let context = HomeData {
         email: &me.0.email,
         contacts: &contacts,
+        current_path: "/",
     };
     Template::render("home", &context)
 }
@@ -255,6 +283,6 @@ fn logout(cookies: &Cookies) -> Redirect {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, login, finish_login, home, logout, new_contact])
+        .mount("/", routes![index, login, finish_login, home, logout, new_contact, delete_contact])
         .launch();
 }
