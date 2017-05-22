@@ -19,6 +19,22 @@
         Info <input id="info" name="info" />
       </label>
     </p>
-    <button type="submit">Add</button>
+    <p>
+      <button type="submit">Add</button>
+    </p>
+  </form>
+  <form method="post" action="/subscriptions">
+    <script
+      src="https://checkout.stripe.com/checkout.js" class="stripe-button"
+      data-amount="100"
+      data-description="Subscription for blah"
+      data-email="{{ email }}"
+      data-key="{{ stripe_public_key }}"
+      data-label="Ship it"
+      data-name="Contact Sheet"
+      data-shipping-address="true"
+      data-zip-code="true"
+    >
+    </script>
   </form>
 {% endblock content %}

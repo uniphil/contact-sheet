@@ -4,6 +4,7 @@
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
 extern crate diesel;
+extern crate dotenv;
 extern crate r2d2;
 extern crate r2d2_diesel;
 extern crate rocket;
@@ -13,7 +14,9 @@ extern crate uuid;
 extern crate contacts;
 
 use std::collections::HashMap;
+use std::env;
 use diesel::pg::PgConnection;
+use dotenv::dotenv;
 use r2d2::{Pool, PooledConnection, GetTimeout};
 use r2d2_diesel::ConnectionManager;
 use rocket::Outcome::{Success, Failure, Forward};
@@ -245,24 +248,41 @@ Result<Redirect, String> {
 }
 
 
+#[post("/subscriptions", data="<form>")]
+fn subscribe(form: Form<contacts::StripeSubscribe>, me: Me, db: DB) ->
+Result<Redirect, String> {
+    let subscribe = form.get();
+    contacts::create_customer(&subscribe, &me.0);
+    Err("blah".into())
+}
+
+
 #[derive(Serialize)]
 struct HomeData<'a> {
     email: &'a str,
     contacts: &'a [Contact],
     current_path: &'a str,
+    stripe_public_key: &'a str,
 }
 
 #[get("/")]
 fn home(me: Me, db: DB) -> Template {
     use diesel::prelude::*;
+
+    dotenv().ok();
+    let stripe_public_key = &env::var("STRIPE_PUBLIC").expect("STRIPE_PUBLIC must be set");
+
     let contacts: Vec<Contact> = Contact::belonging_to(&(me.0))
             .load(db.conn())
             .expect("could not load contacts");
+
     let context = HomeData {
         email: &me.0.email,
         contacts: &contacts,
         current_path: "/",
+        stripe_public_key,
     };
+
     Template::render("home", &context)
 }
 
@@ -283,6 +303,15 @@ fn logout(cookies: &Cookies) -> Redirect {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, login, finish_login, home, logout, new_contact, delete_contact])
+        .mount("/", routes![
+            index,
+            login,
+            finish_login,
+            home,
+            logout,
+            new_contact,
+            delete_contact,
+            subscribe,
+        ])
         .launch();
 }

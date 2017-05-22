@@ -1,3 +1,6 @@
+#![feature(plugin, custom_derive)]
+#![plugin(rocket_codegen)]
+
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate diesel_codegen;
 #[macro_use] extern crate serde_derive;
@@ -6,6 +9,7 @@ extern crate dotenv;
 extern crate r2d2;
 extern crate r2d2_diesel;
 extern crate reqwest;
+extern crate rocket;
 extern crate serde;
 extern crate uuid;
 
@@ -17,9 +21,10 @@ use diesel::pg::PgConnection;
 use r2d2::{Pool, Config};
 use r2d2_diesel::ConnectionManager;
 use reqwest::Client;
+use reqwest::header::{Authorization, Bearer};
 use std::env;
 use uuid::Uuid;
-// use std::io::Read;
+use std::io::Read;
 
 
 pub fn create_db_pool() -> Pool<ConnectionManager<PgConnection>> {
@@ -48,10 +53,57 @@ pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> () {
     ];
     let client = Client::new().unwrap();
     let res = client.post(&format!("{}{}", mg_url, "/messages"))
-        .basic_auth("api".to_string(), Some(mg_key))
+        .basic_auth("api".to_owned(), Some(mg_key))
         .form(&params)
         .send()
         .unwrap();
     println!("{:?}", res);
     assert!(res.status().is_success());
+}
+
+
+#[derive(Debug, FromForm)]
+#[allow(non_snake_case)]
+pub struct StripeSubscribe {
+    stripeToken: String,
+    stripeTokenType: String,
+    stripeEmail: String,
+    stripeBillingName: String,
+    stripeBillingAddressLine1: String,
+    stripeBillingAddressZip: String,
+    stripeBillingAddressState: String,
+    stripeBillingAddressCity: String,
+    stripeBillingAddressCountry: String,
+    stripeBillingAddressCountryCode: String,
+    stripeShippingName: String,
+    stripeShippingAddressLine1: String,
+    stripeShippingAddressZip: String,
+    stripeShippingAddressState: String,
+    stripeShippingAddressCity: String,
+    stripeShippingAddressCountry: String,
+    stripeShippingAddressCountryCode: String,
+}
+
+
+pub fn create_customer(subscribe: &StripeSubscribe, me: &models::Person) -> () {
+    dotenv().ok();
+    let stripe_sk = env::var("STRIPE_SECRET").expect("fdsa");
+    let client = Client::new().unwrap();
+    let params = [
+        ("plan", "testing"),
+        ("source", &subscribe.stripeToken),
+        ("email", &me.email),
+    ];
+    let mut res = client.post("https://api.stripe.com/v1/customers")
+        .header(Authorization(Bearer { token: stripe_sk }))
+        .form(&params)
+        .send()
+        .unwrap();
+    println!("{:?}", res);
+    let mut content = String::new();
+    res.read_to_string(&mut content).unwrap();
+    println!("{}", content);
+    if !res.status().is_success() {
+        panic!("not successful");
+    }
 }

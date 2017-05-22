@@ -5,6 +5,6 @@ CREATE TABLE people (
     email       CITEXT                                  NOT NULL UNIQUE,
                 CONSTRAINT valid_email
                 CHECK (email LIKE '%_@_%'),
-    activated   BOOLEAN     DEFAULT false               NOT NULL,
-    disabled    BOOLEAN     DEFAULT false               NOT NULL
+    address     ADDRESS                                 NULL,
+    customer    TEXT                                    NULL UNIQUE
 )

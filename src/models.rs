@@ -14,6 +14,7 @@ pub struct Person {
     pub email: String,
     pub activated: bool,
     pub disabled: bool,
+    pub address: i64,
 }
 
 #[derive(Insertable)]
