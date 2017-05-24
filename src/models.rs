@@ -1,33 +1,42 @@
 use chrono::naive::datetime::NaiveDateTime;
+use postgres::rows::Row;
 use uuid::Uuid;
 
-use super::schema::{people, sessions, contacts};
 
+#[derive(Debug, FromSql)]
+#[postgres(name="address")]
+pub struct Address {
+    pub name: String,
+    pub line1: String,
+    pub postal_code: String,
+    pub city: String,
+    pub province: String,
+    pub country: String,
+}
 
-#[derive(Queryable, Associations, Identifiable, Clone, Debug)]
-#[table_name="people"]
-#[has_many(sessions, foreign_key="account")]
-#[has_many(contacts, foreign_key="account")]
+#[derive(Debug)]
 pub struct Person {
     pub id: Uuid,
     pub created: NaiveDateTime,
     pub email: String,
-    pub activated: bool,
-    pub disabled: bool,
-    pub address: i64,
+    pub address: Option<Address>,
+    pub customer: Option<String>,
 }
 
-#[derive(Insertable)]
-#[table_name="people"]
-pub struct NewPerson<'a> {
-    pub email: &'a str,
+impl Person {
+    pub fn from_row(row: Row) -> Person {
+        Person {
+            id: row.get("id"),
+            created: row.get("created"),
+            email: row.get("email"),
+            address: row.get("address"),
+            customer: row.get("customer"),
+        }
+    }
 }
 
 
-#[derive(Queryable, Associations, Identifiable, AsChangeset, Insertable, Clone, Debug)]
-#[table_name="sessions"]
-#[belongs_to(Person, foreign_key="account")]
-#[primary_key(login_key)]
+#[derive(Clone, Debug)]
 pub struct Session {
     pub login_key: Uuid,
     pub created: NaiveDateTime,
@@ -38,25 +47,18 @@ pub struct Session {
 
 
 impl Session {
-    pub fn login(&self) -> Session {
-        let mut new = self.clone();
-        new.session_id = Some(Uuid::new_v4());
-        new
+    pub fn from_row(row: Row) -> Session {
+        Session {
+            login_key: row.get("login_key"),
+            created: row.get("created"),
+            account: row.get("account"),
+            session_id: row.get("session_id"),
+            accessed: row.get("accessed"),
+        }
     }
 }
 
-
-#[derive(Insertable)]
-#[table_name="sessions"]
-pub struct NewSession {
-    pub account: Uuid,
-    // pub login_ua: &'a str,
-}
-
-
-#[derive(Queryable, Associations, Identifiable, Serialize, Debug)]
-#[table_name="contacts"]
-#[belongs_to(Person, foreign_key="account")]
+#[derive(Serialize, Debug)]
 pub struct Contact {
     pub id: Uuid,
     pub created: NaiveDateTime,
@@ -66,10 +68,14 @@ pub struct Contact {
 }
 
 
-#[derive(Insertable, Debug)]
-#[table_name="contacts"]
-pub struct NewContact<'a> {
-    pub account: Uuid,
-    pub name: &'a str,
-    pub info: &'a str,
+impl Contact {
+    pub fn from_row(row: Row) -> Contact {
+        Contact {
+            id: row.get("id"),
+            created: row.get("created"),
+            account: row.get("account"),
+            name: row.get("name"),
+            info: row.get("info"),
+        }
+    }
 }

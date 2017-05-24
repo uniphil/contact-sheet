@@ -1,25 +1,23 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
-#[macro_use] extern crate diesel;
-#[macro_use] extern crate diesel_codegen;
 #[macro_use] extern crate serde_derive;
+#[macro_use] extern crate postgres_derive;
 extern crate chrono;
 extern crate dotenv;
+extern crate postgres;
 extern crate r2d2;
-extern crate r2d2_diesel;
+extern crate r2d2_postgres;
 extern crate reqwest;
 extern crate rocket;
 extern crate serde;
 extern crate uuid;
 
-pub mod schema;
 pub mod models;
 
 use dotenv::dotenv;
-use diesel::pg::PgConnection;
 use r2d2::{Pool, Config};
-use r2d2_diesel::ConnectionManager;
+use r2d2_postgres::{TlsMode, PostgresConnectionManager};
 use reqwest::Client;
 use reqwest::header::{Authorization, Bearer};
 use std::env;
@@ -27,12 +25,13 @@ use uuid::Uuid;
 use std::io::Read;
 
 
-pub fn create_db_pool() -> Pool<ConnectionManager<PgConnection>> {
+pub fn create_db_pool() -> Pool<PostgresConnectionManager> {
     dotenv().ok();
     let database_url = env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
     let config = Config::default();
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
+    let manager = PostgresConnectionManager::new(database_url, TlsMode::None)
+        .expect("bleh?");
     Pool::new(config, manager)
         .expect("Failed to create pool.")
 }

@@ -3,10 +3,10 @@
 
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
-extern crate diesel;
 extern crate dotenv;
+extern crate postgres;
 extern crate r2d2;
-extern crate r2d2_diesel;
+extern crate r2d2_postgres;
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate serde;
@@ -15,10 +15,9 @@ extern crate contacts;
 
 use std::collections::HashMap;
 use std::env;
-use diesel::pg::PgConnection;
 use dotenv::dotenv;
 use r2d2::{Pool, PooledConnection, GetTimeout};
-use r2d2_diesel::ConnectionManager;
+use r2d2_postgres::PostgresConnectionManager;
 use rocket::Outcome::{Success, Failure, Forward};
 use rocket::Request;
 use rocket::http::{Cookie, Cookies, Status};
@@ -27,21 +26,22 @@ use rocket::response::Redirect;
 use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
 
-use contacts::models::{Person, Contact};
+use contacts::models::{Person, Session, Contact};
 
 
 lazy_static! {
-    pub static ref DB_POOL: Pool<ConnectionManager<PgConnection>> = contacts::create_db_pool();
+    pub static ref DB_POOL: Pool<PostgresConnectionManager> = contacts::create_db_pool();
 }
 
 
-pub struct DB(PooledConnection<ConnectionManager<PgConnection>>);
+pub struct DB(PooledConnection<PostgresConnectionManager>);
 
 impl DB {
-    pub fn conn(&self) -> &PgConnection {
+    pub fn conn(&self) -> &postgres::Connection {
         &*self.0
     }
 }
+
 
 impl<'a, 'r> FromRequest<'a, 'r> for DB {
     type Error = GetTimeout;
@@ -63,47 +63,43 @@ struct Email {
 #[post("/login", data="<form>")]
 fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
     let &Email { ref email } = form.get();
-    let email_ = email;
 
     // if we start an auth flow, kill whatever session may exist
     cookies.remove("session");
 
+    let conn = db.conn();
+
     let (me, new) = {
-        use diesel::prelude::*;
-        use contacts::schema::people;
-        use contacts::schema::people::dsl::*;
-        use contacts::models::{Person, NewPerson};
+        let res: Option<Person> = conn
+            .query("SELECT * FROM people WHERE people.email = $1", &[&email])
+            .expect("oops")
+            .into_iter()
+            .map(Person::from_row)
+            .next();
 
-        let res = people.filter(email.eq(email))
-            .load::<Person>(db.conn())
-            .expect("couldn't query people");
-
-        if let Some(me) = res.first() {
-            (me.clone(), false)
+        if let Some(me) = res {
+            (me, false)
         } else {
-            let new_me = NewPerson {
-                email: email_,
-            };
-            let me: Person = diesel::insert(&new_me).into(people::table)
-                .get_result(db.conn())
-                .expect("error saving me");
-            (me, true)
+            let new_me: Person = conn
+                .query("INSERT INTO people (email) VALUES ($1) RETURNING *", &[&email])
+                .expect("oopsie")
+                .into_iter()
+                .map(Person::from_row)
+                .next()
+                .expect("shoulda");
+            (new_me, true)
         }
     };
 
-    {
-        use diesel::prelude::*;
-        use contacts::schema::sessions;
-        use contacts::models::{NewSession, Session};
-        let new_session = NewSession {
-            account: me.id,
-        };
-        let session: Session = diesel::insert(&new_session).into(sessions::table)
-            .get_result(db.conn())
-            .expect("error creating session");
+    let login_key: Uuid = conn
+        .query("INSERT INTO sessions (account) VALUES ($1) RETURNING login_key", &[&me.id])
+        .expect("bleh")
+        .into_iter()
+        .map(|row| row.get(0))
+        .next()
+        .expect("whatev");
 
-        contacts::send_login(email, &session.login_key, new);
-    }
+    contacts::send_login(email, &login_key, new);
 
     let mut context = HashMap::new();
     context.insert("email", email);
@@ -125,33 +121,34 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, S
     // if we are in auth flow, kill whatever session may exist
     cookies.remove("session");
 
-    {
-        use diesel::prelude::*;
-        use contacts::schema::sessions::dsl::*;
-        use contacts::models::Session;
+    let existing = db.conn()
+        .query("SELECT * FROM sessions WHERE login_key = $1", &[&key.into_inner()])
+        .expect("yea yeah")
+        .into_iter()
+        .map(Session::from_row)
+        .next();
 
-        let res = sessions.find(key.into_inner()).load::<Session>(db.conn()).expect("blah");
-
-        if let Some(session) = res.first() {
-            if let Some(id) = session.session_id {
-                return Err(format!("already got this session {} whoops", id))
-            } else {
-                let logged_in = session.login();
-                logged_in.save_changes::<Session>(db.conn()).expect("failed to save login");
-                let id = logged_in.session_id.unwrap().hyphenated().to_string();
-                let cookie = Cookie::build("session", id)
-                    // .domain(blah)
-                    .path("/")
-                    // .secure(true)
-                    .http_only(true)
-                    .finish();
-                cookies.add(cookie);
-                return Ok(Redirect::to("/"))
-            }
+    if let Some(session) = existing {
+        if let Some(_) = session.session_id {
+            return Err(format!("already got this session whoops"))
         } else {
-            println!("oooh {:?}", "asdf");
-        }
+            let id: Uuid = db.conn()
+                .query("UPDATE sessions SET session_id = uuid_generate_v4() WHERE login_key = $1 RETURNING session_id", &[&key.into_inner()])
+                .expect("kyo")
+                .into_iter()
+                .map(|row| row.get(0))
+                .next()
+                .expect("mhmm");
 
+            let cookie = Cookie::build("session", id.to_string())
+                // .domain(blah)
+                .path("/")
+                // .secure(true)
+                .http_only(true)
+                .finish();
+            cookies.add(cookie);
+            return Ok(Redirect::to("/"))
+        }
     }
 
     Err("asdf".to_string())
@@ -171,19 +168,15 @@ impl<'a, 'r> FromRequest<'a, 'r> for Me {
             .and_then(|cookie| cookie.value().parse().ok());
 
         if let Some(claimed_uuid) = claimed_id {
-            use diesel::prelude::*;
-            use contacts::schema::sessions;
-            use contacts::schema::people::dsl::*;
-            use contacts::schema::sessions::dsl::*;
-            use contacts::models::{Person, Session};
             let db = DB(DB_POOL.get().expect("couldn't get db"));
-
-            let data = people.inner_join(sessions::table)
-                .filter(session_id.eq(claimed_uuid))
-                .first::<(Person, Session)>(db.conn());
-
-            if let Ok((me, _)) = data {
-                return Success(Me(me));
+            let res = db.conn()
+                .query("SELECT p.* FROM people p, sessions s WHERE s.account = p.id AND s.session_id = $1", &[&claimed_uuid])
+                .expect("k")
+                .into_iter()
+                .map(Person::from_row)
+                .next();
+            if let Some(me) = res {
+                return Success(Me(me))
             }
         }
 
@@ -202,21 +195,10 @@ struct NewContactForm {
 #[post("/contacts", data="<form>")]
 fn new_contact(form: Form<NewContactForm>, me: Me, db: DB) ->
 Result<Redirect, String> {
-    use diesel::prelude::*;
-    use contacts::schema::contacts;
-    use contacts::models::NewContact;
-
     let &NewContactForm { ref name, ref info } = form.get();
 
-    let new_contact = NewContact {
-        account: me.0.id,
-        name,
-        info,
-    };
-
-    diesel::insert(&new_contact)
-        .into(contacts::table)
-        .execute(db.conn())
+    db.conn()
+        .execute("INSERT INTO contacts (account, name, info) VALUES ($1, $2, $3)", &[&me.0.id, &name, &info])
         .and_then(|_| Ok(Redirect::to("/")))
         .or_else(|_| Err("could not save contact".into()))
 }
@@ -232,18 +214,15 @@ struct DeleteContactForm {
 #[get("/contacts/delete?<form>")]
 fn delete_contact(form: DeleteContactForm, me: Me, db: DB) ->
 Result<Redirect, String> {
-    use diesel::prelude::*;
-    use contacts::schema::contacts::dsl::*;
+    let DeleteContactForm { id, next } = form;
 
-    let DeleteContactForm { id: id_, next } = form;
-
-    diesel::delete(contacts.filter(account.eq(me.0.id).and(id.eq(*id_))))
-        .execute(db.conn())
-        .or_else(|_| Err("Could not delete contact".into()))
-        .and_then(|num| if num == 1 {
-            Ok(Redirect::to(&next.unwrap_or("/".into())))
-        } else {
-            Err("no contact found".into())
+    db.conn()
+        .execute("DELETE FROM contacts WHERE id = $1 AND account = $2", &[&id.into_inner(), &me.0.id])
+        .or_else(|_| Err("could not delete contact".into()))
+        .and_then(|num| match num {
+            0 => Err("contact not found".into()),
+            1 => Ok(Redirect::to(&next.unwrap_or("/".into()))),
+            _ => Err("whaaaaa".into()),
         })
 }
 
@@ -267,14 +246,15 @@ struct HomeData<'a> {
 
 #[get("/")]
 fn home(me: Me, db: DB) -> Template {
-    use diesel::prelude::*;
-
     dotenv().ok();
     let stripe_public_key = &env::var("STRIPE_PUBLIC").expect("STRIPE_PUBLIC must be set");
 
-    let contacts: Vec<Contact> = Contact::belonging_to(&(me.0))
-            .load(db.conn())
-            .expect("could not load contacts");
+    let contacts = db.conn()
+        .query("SELECT * FROM contacts WHERE account = $1", &[&me.0.id])
+        .expect("hi")
+        .into_iter()
+        .map(Contact::from_row)
+        .collect::<Vec<_>>();
 
     let context = HomeData {
         email: &me.0.email,
