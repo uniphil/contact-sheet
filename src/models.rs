@@ -68,6 +68,57 @@ pub struct Contact {
 }
 
 
+#[derive(Debug, Deserialize, ToSql)]
+#[postgres(name="ccbrand")]
+pub enum CCBrand {
+    Visa,
+    #[postgres(name="American Express")]
+    AmericanExpress,
+    MasterCard,
+    Discover,
+    JCB,
+    #[postgres(name="Diners Club")]
+    DinersClub,
+    Unknown
+}
+
+pub fn as_brand(brand: &str) -> CCBrand {
+    use self::CCBrand::*;
+    match brand {
+        "Visa" => Visa,
+        "American Express" => AmericanExpress,
+        "MasterCard" => MasterCard,
+        "Discover" => Discover,
+        "JCB" => JCB,
+        "Diners Club" => DinersClub,
+        "Unknown" => Unknown,
+        _ => panic!("unrecognized brand"),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StripeSource {
+    pub id: String,
+    pub brand: String,
+    pub country: String,
+    pub customer: String,
+    pub last4: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StripeSourcesEnvelope {
+    pub data: Vec<StripeSource>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StripeSubscribedCustomer {
+    pub id: String,
+    pub default_source: String,
+    pub sources: StripeSourcesEnvelope,
+}
+
+
 impl Contact {
     pub fn from_row(row: Row) -> Contact {
         Contact {

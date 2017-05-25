@@ -10,6 +10,7 @@ extern crate r2d2_postgres;
 extern crate rocket;
 extern crate rocket_contrib;
 extern crate serde;
+extern crate serde_json;
 extern crate uuid;
 extern crate contacts;
 
@@ -26,7 +27,7 @@ use rocket::response::Redirect;
 use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
 
-use contacts::models::{Person, Session, Contact};
+use contacts::models::{Person, Session, Contact, as_brand};
 
 
 lazy_static! {
@@ -226,12 +227,53 @@ Result<Redirect, String> {
         })
 }
 
+#[derive(Debug, FromForm)]
+#[allow(non_snake_case)]
+pub struct StripeSubscribe {
+    stripeToken: String,
+    stripeTokenType: String,
+    stripeEmail: String,
+    stripeBillingName: String,
+    stripeBillingAddressLine1: String,
+    stripeBillingAddressZip: String,
+    stripeBillingAddressState: String,
+    stripeBillingAddressCity: String,
+    stripeBillingAddressCountry: String,
+    stripeBillingAddressCountryCode: String,
+    stripeShippingName: String,
+    stripeShippingAddressLine1: String,
+    stripeShippingAddressZip: String,
+    stripeShippingAddressState: String,
+    stripeShippingAddressCity: String,
+    stripeShippingAddressCountry: String,
+    stripeShippingAddressCountryCode: String,
+}
 
 #[post("/subscriptions", data="<form>")]
-fn subscribe(form: Form<contacts::StripeSubscribe>, me: Me, db: DB) ->
+fn subscribe(form: Form<StripeSubscribe>, me: Me, db: DB) ->
 Result<Redirect, String> {
-    let subscribe = form.get();
-    contacts::create_customer(&subscribe, &me.0);
+    let data = form.get();
+    let res = db.conn()
+        .execute("UPDATE people SET address = ($2, $3, $4, $5, $6, $7) WHERE id = $1", &[
+            &me.0.id,
+            &data.stripeShippingName,
+            &data.stripeShippingAddressLine1,
+            &data.stripeShippingAddressZip,
+            &data.stripeShippingAddressCity,
+            &data.stripeShippingAddressState,
+            &data.stripeShippingAddressCountry,
+        ])
+        .expect("couldn't set address");
+    let subscriber = contacts::create_customer(&data.stripeToken, &me.0);
+    db.conn()
+        .execute("UPDATE people SET customer = $1 WHERE id = $2",
+            &[&subscriber.id, &me.0.id])
+        .expect("couldn't set subscriber");
+    let ref source = subscriber.sources.data[0];
+    db.conn()
+        .execute("INSERT INTO cards (id, brand, country, customer, last4, name) VALUES ($1, $2, $3, $4, $5, $6)",
+            &[&source.id, &as_brand(&source.brand), &source.country, &source.customer, &source.last4, &source.name])
+        .expect("couldn't save card");
     Err("blah".into())
 }
 
