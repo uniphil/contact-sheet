@@ -78,9 +78,9 @@
     </style>
   </head>
   <body>
-    {% if email %}
+    {% if me %}
       <nav>
-        <span>{{ email }}</span>
+        <span>{{ me.email }}</span>
         <a href="/logout">log out</a>
       </nav>
     {% endif %}

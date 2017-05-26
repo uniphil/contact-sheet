@@ -253,7 +253,7 @@ pub struct StripeSubscribe {
 fn subscribe(form: Form<StripeSubscribe>, me: Me, db: DB) ->
 Result<Redirect, String> {
     let data = form.get();
-    let res = db.conn()
+    db.conn()
         .execute("UPDATE people SET address = ($2, $3, $4, $5, $6, $7) WHERE id = $1", &[
             &me.0.id,
             &data.stripeShippingName,
@@ -274,13 +274,13 @@ Result<Redirect, String> {
         .execute("INSERT INTO cards (id, brand, country, customer, last4, name) VALUES ($1, $2, $3, $4, $5, $6)",
             &[&source.id, &as_brand(&source.brand), &source.country, &source.customer, &source.last4, &source.name])
         .expect("couldn't save card");
-    Err("blah".into())
+    Ok(Redirect::to("/"))
 }
 
 
 #[derive(Serialize)]
 struct HomeData<'a> {
-    email: &'a str,
+    me: &'a Person,
     contacts: &'a [Contact],
     current_path: &'a str,
     stripe_public_key: &'a str,
@@ -299,7 +299,7 @@ fn home(me: Me, db: DB) -> Template {
         .collect::<Vec<_>>();
 
     let context = HomeData {
-        email: &me.0.email,
+        me: &me.0,
         contacts: &contacts,
         current_path: "/",
         stripe_public_key,

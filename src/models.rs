@@ -3,7 +3,7 @@ use postgres::rows::Row;
 use uuid::Uuid;
 
 
-#[derive(Debug, FromSql)]
+#[derive(Debug, Serialize, FromSql)]
 #[postgres(name="address")]
 pub struct Address {
     pub name: String,
@@ -14,7 +14,7 @@ pub struct Address {
     pub country: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Person {
     pub id: Uuid,
     pub created: NaiveDateTime,
