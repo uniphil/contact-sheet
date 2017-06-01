@@ -7,7 +7,6 @@
 #[macro_use] extern crate postgres;
 #[macro_use] extern crate postgres_derive;
 extern crate chrono;
-extern crate dotenv;
 extern crate r2d2;
 extern crate r2d2_postgres;
 extern crate reqwest;
@@ -19,32 +18,32 @@ extern crate uuid;
 pub mod errors;
 pub mod models;
 
-use dotenv::dotenv;
+use errors::*;
 use r2d2::{Pool, Config};
 use r2d2_postgres::{TlsMode, PostgresConnectionManager};
 use reqwest::Client;
 use reqwest::header::{Authorization, Basic, Bearer};
-use std::env;
+use rocket::config::{self, ConfigError};
 use uuid::Uuid;
 
 
-pub fn create_db_pool() -> Pool<PostgresConnectionManager> {
-    dotenv().ok();
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
+pub fn create_db_pool() -> Result<Pool<PostgresConnectionManager>> {
+    let database_url = config::active()
+        .ok_or(ConfigError::NotFound)?
+        .get_str("database_url")?;
     let config = Config::default();
-    let manager = PostgresConnectionManager::new(database_url, TlsMode::None)
-        .expect("bleh?");
-    Pool::new(config, manager)
-        .expect("Failed to create pool.")
+    let manager = PostgresConnectionManager::new(database_url, TlsMode::None)?;
+    Ok(Pool::new(config, manager)?)
 }
 
 
-pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> () {
-    dotenv().ok();
-    let mg_url = env::var("MAILGUN_URL").expect("MAILGUN_URL must be set");
-    let mg_key = env::var("MAILGUN_KEY").expect("MAILGUN_KEY must be set");
-    let host = env::var("HOST").expect("HOST must be set");
+pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> Result<()> {
+    let conf = config::active().ok_or(ConfigError::NotFound)?;
+
+    let mg_url = conf.get_str("mailgun_url")?;
+    let mg_key = conf.get_str("mailgun_key")?;
+    let host = conf.get_str("host")?;
+
     let subject = if new { "Get started with Contact Sheet" }
                     else { "Log in to Contact Sheet" };
     let params = [
@@ -53,39 +52,49 @@ pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> () {
         ("subject", subject),
         ("text", &format!("Here is your key: {}/login?key={}", host, login_key)),
     ];
-    let client = Client::new().unwrap();
+    let client = Client::new()?;
     let res = client.post(&format!("{}{}", mg_url, "/messages"))
         .header(Authorization(Basic {
             username: "api".to_owned(),
-            password: Some(mg_key),
+            password: Some(mg_key.to_owned()),
         }))
         .form(&params)
         .send()
-        .unwrap();
-    assert!(res.status().is_success());
+        .chain_err(|| "Could not send login email")?;
+
+    if ! res.status().is_success() {
+        bail!("Could not send login email");
+    }
+
+    Ok(())
 }
 
 
-pub fn create_customer(token: &str, me: &models::Person) -> models::StripeSubscribedCustomer {
-    dotenv().ok();
-    let stripe_sk = env::var("STRIPE_SECRET").expect("fdsa");
-    let client = Client::new().unwrap();
+pub fn create_customer(token: &str, me: &models::Person) ->
+Result<models::StripeSubscribedCustomer> {
+    let conf = config::active().ok_or(ConfigError::NotFound)?;
+
+    let stripe_sk = conf.get_str("stripe_sk")?;
+
+    let client = Client::new()?;
     let params = [
         ("plan", "testing"),
         ("source", &token),
         ("email", &me.email),
     ];
     let mut res = client.post("https://api.stripe.com/v1/customers")
-        .header(Authorization(Bearer { token: stripe_sk }))
+        .header(Authorization(Bearer { token: stripe_sk.into() }))
         .form(&params)
         .send()
-        .expect("tried to send request. sigh.");
+        .chain_err(|| "tried to send request. sigh.")?;
 
-    if !res.status().is_success() {
-        panic!("not successful");
+    if ! res.status().is_success() {
+        bail!("not successful");
     }
 
-    res
+    let customer = res
         .json::<models::StripeSubscribedCustomer>()
-        .expect("tried to deserialize stuff. hhhhhhh.")
+        .chain_err(|| "tried to deserialize stuff. hhhhhhh.")?;
+
+    Ok(customer)
 }

@@ -4,7 +4,6 @@ version = "0.0.1"
 authors = ["phil <uniphil@gmail.com>"]
 
 [dependencies]
-dotenv = "0.8.0"
 error-chain = "0.10"
 lazy_static = "0.2.8"
 postgres-derive = "0.3"

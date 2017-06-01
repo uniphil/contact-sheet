@@ -4,7 +4,6 @@
 #[macro_use] extern crate error_chain;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
-extern crate dotenv;
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
@@ -16,12 +15,11 @@ extern crate uuid;
 extern crate contacts;
 
 use std::collections::HashMap;
-use std::env;
-use dotenv::dotenv;
 use r2d2::{Pool, PooledConnection, GetTimeout};
 use r2d2_postgres::PostgresConnectionManager;
 use rocket::Outcome::{Success, Failure, Forward};
 use rocket::Request;
+use rocket::config::{self, ConfigError};
 use rocket::http::{Cookie, Cookies, Status};
 use rocket::request::{Form, FromRequest, Outcome};
 use rocket::response::Redirect;
@@ -33,7 +31,7 @@ use contacts::models::{Person, Session, Contact, as_brand};
 
 
 lazy_static! {
-    pub static ref DB_POOL: Pool<PostgresConnectionManager> = contacts::create_db_pool();
+    pub static ref DB_POOL: Pool<PostgresConnectionManager> = contacts::create_db_pool().unwrap();
 }
 
 
@@ -64,7 +62,7 @@ struct Email {
 
 
 #[post("/login", data="<form>")]
-fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
+fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Result<Template> {
     let &Email { ref email } = form.get();
 
     // if we start an auth flow, kill whatever session may exist
@@ -102,12 +100,12 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Template {
         .next()
         .expect("whatev");
 
-    contacts::send_login(email, &login_key, new);
+    contacts::send_login(email, &login_key, new)?;
 
     let mut context = HashMap::new();
     context.insert("email", email);
 
-    Template::render("login", &context)
+    Ok(Template::render("login", &context))
 }
 
 
@@ -264,7 +262,7 @@ fn subscribe(form: Form<StripeSubscribe>, me: Me, db: DB) -> Result<Redirect> {
             &data.stripeShippingAddressCountry,
         ])?;
 
-    let subscriber = contacts::create_customer(&data.stripeToken, &me.0);
+    let subscriber = contacts::create_customer(&data.stripeToken, &me.0)?;
     db.conn()
         .execute("UPDATE people SET customer = $1 WHERE id = $2",
             &[&subscriber.id, &me.0.id])?;
@@ -290,8 +288,9 @@ struct HomeData<'a> {
 
 #[get("/")]
 fn home(me: Me, db: DB) -> Result<Template> {
-    dotenv().ok();
-    let stripe_public_key = &env::var("STRIPE_PUBLIC").expect("STRIPE_PUBLIC must be set");
+    let stripe_public_key = config::active()
+        .ok_or(ConfigError::NotFound)?
+        .get_str("stripe_pk")?;
 
     let contacts = db.conn()
         .query("SELECT * FROM contacts WHERE account = $1", &[&me.0.id])?
