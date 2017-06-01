@@ -1,6 +1,7 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
+#[macro_use] extern crate error_chain;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
 extern crate dotenv;
@@ -27,6 +28,7 @@ use rocket::response::Redirect;
 use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
 
+use contacts::errors::*;
 use contacts::models::{Person, Session, Contact, as_brand};
 
 
@@ -116,43 +118,40 @@ struct LoginKey {
 
 
 #[get("/login?<form>")]
-fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect, String> {
+fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect> {
     let LoginKey { ref key } = form;
 
     // if we are in auth flow, kill whatever session may exist
     cookies.remove("session");
 
     let existing = db.conn()
-        .query("SELECT * FROM sessions WHERE login_key = $1", &[&key.into_inner()])
-        .expect("yea yeah")
+        .query("SELECT * FROM sessions WHERE login_key = $1", &[&key.into_inner()])?
         .into_iter()
         .map(Session::from_row)
         .next();
 
-    if let Some(session) = existing {
-        if let Some(_) = session.session_id {
-            return Err(format!("already got this session whoops"))
-        } else {
-            let id: Uuid = db.conn()
-                .query("UPDATE sessions SET session_id = uuid_generate_v4() WHERE login_key = $1 RETURNING session_id", &[&key.into_inner()])
-                .expect("kyo")
-                .into_iter()
-                .map(|row| row.get(0))
-                .next()
-                .expect("mhmm");
+    let session = existing.ok_or("missing session")?;
 
-            let cookie = Cookie::build("session", id.to_string())
-                // .domain(blah)
-                .path("/")
-                // .secure(true)
-                .http_only(true)
-                .finish();
-            cookies.add(cookie);
-            return Ok(Redirect::to("/"))
-        }
+    if session.session_id.is_some() {
+        bail!("already got this session whoops");
     }
 
-    Err("asdf".to_string())
+    let id: Uuid = db.conn()
+        .query("UPDATE sessions SET session_id = uuid_generate_v4() WHERE login_key = $1 RETURNING session_id", &[&key.into_inner()])?
+        .into_iter()
+        .map(|row| row.get(0))
+        .next()
+        .ok_or("failed to set session_id")?;
+
+    let cookie = Cookie::build("session", id.to_string())
+        // .domain(blah)
+        .path("/")
+        // .secure(true)
+        .http_only(true)
+        .finish();
+    cookies.add(cookie);
+
+    Ok(Redirect::to("/"))
 }
 
 
@@ -194,14 +193,15 @@ struct NewContactForm {
 
 
 #[post("/contacts", data="<form>")]
-fn new_contact(form: Form<NewContactForm>, me: Me, db: DB) ->
-Result<Redirect, String> {
+fn new_contact(form: Form<NewContactForm>, me: Me, db: DB) -> Result<Redirect> {
     let &NewContactForm { ref name, ref info } = form.get();
 
-    db.conn()
-        .execute("INSERT INTO contacts (account, name, info) VALUES ($1, $2, $3)", &[&me.0.id, &name, &info])
-        .and_then(|_| Ok(Redirect::to("/")))
-        .or_else(|_| Err("could not save contact".into()))
+    db.conn().execute(
+        "INSERT INTO contacts (account, name, info) VALUES ($1, $2, $3)",
+        &[&me.0.id, &name, &info]
+    )?;
+
+    Ok(Redirect::to("/"))
 }
 
 
@@ -213,18 +213,19 @@ struct DeleteContactForm {
 
 
 #[get("/contacts/delete?<form>")]
-fn delete_contact(form: DeleteContactForm, me: Me, db: DB) ->
-Result<Redirect, String> {
+fn delete_contact(form: DeleteContactForm, me: Me, db: DB) -> Result<Redirect> {
     let DeleteContactForm { id, next } = form;
 
-    db.conn()
-        .execute("DELETE FROM contacts WHERE id = $1 AND account = $2", &[&id.into_inner(), &me.0.id])
-        .or_else(|_| Err("could not delete contact".into()))
-        .and_then(|num| match num {
-            0 => Err("contact not found".into()),
-            1 => Ok(Redirect::to(&next.unwrap_or("/".into()))),
-            _ => Err("whaaaaa".into()),
-        })
+    let n = db.conn().execute(
+        "DELETE FROM contacts WHERE id = $1 AND account = $2",
+        &[&id.into_inner(), &me.0.id]
+    )?;
+
+    match n {
+        0 => bail!("contact not found"),
+        1 => Ok(Redirect::to(&next.unwrap_or("/".into()))),
+        _ => bail!("wat"),
+    }
 }
 
 #[derive(Debug, FromForm)]
@@ -250,8 +251,7 @@ pub struct StripeSubscribe {
 }
 
 #[post("/subscriptions", data="<form>")]
-fn subscribe(form: Form<StripeSubscribe>, me: Me, db: DB) ->
-Result<Redirect, String> {
+fn subscribe(form: Form<StripeSubscribe>, me: Me, db: DB) -> Result<Redirect> {
     let data = form.get();
     db.conn()
         .execute("UPDATE people SET address = ($2, $3, $4, $5, $6, $7) WHERE id = $1", &[
@@ -262,18 +262,20 @@ Result<Redirect, String> {
             &data.stripeShippingAddressCity,
             &data.stripeShippingAddressState,
             &data.stripeShippingAddressCountry,
-        ])
-        .expect("couldn't set address");
+        ])?;
+
     let subscriber = contacts::create_customer(&data.stripeToken, &me.0);
     db.conn()
         .execute("UPDATE people SET customer = $1 WHERE id = $2",
-            &[&subscriber.id, &me.0.id])
-        .expect("couldn't set subscriber");
+            &[&subscriber.id, &me.0.id])?;
+
     let ref source = subscriber.sources.data[0];
-    db.conn()
-        .execute("INSERT INTO cards (id, brand, country, customer, last4, name) VALUES ($1, $2, $3, $4, $5, $6)",
-            &[&source.id, &as_brand(&source.brand), &source.country, &source.customer, &source.last4, &source.name])
-        .expect("couldn't save card");
+
+    db.conn().execute(
+        "INSERT INTO cards (id, brand, country, customer, last4, name) VALUES ($1, $2, $3, $4, $5, $6)",
+        &[&source.id, &as_brand(&source.brand), &source.country, &source.customer, &source.last4, &source.name]
+    )?;
+
     Ok(Redirect::to("/"))
 }
 
@@ -287,13 +289,12 @@ struct HomeData<'a> {
 }
 
 #[get("/")]
-fn home(me: Me, db: DB) -> Template {
+fn home(me: Me, db: DB) -> Result<Template> {
     dotenv().ok();
     let stripe_public_key = &env::var("STRIPE_PUBLIC").expect("STRIPE_PUBLIC must be set");
 
     let contacts = db.conn()
-        .query("SELECT * FROM contacts WHERE account = $1", &[&me.0.id])
-        .expect("hi")
+        .query("SELECT * FROM contacts WHERE account = $1", &[&me.0.id])?
         .into_iter()
         .map(Contact::from_row)
         .collect::<Vec<_>>();
@@ -305,7 +306,7 @@ fn home(me: Me, db: DB) -> Template {
         stripe_public_key,
     };
 
-    Template::render("home", &context)
+    Ok(Template::render("home", &context))
 }
 
 

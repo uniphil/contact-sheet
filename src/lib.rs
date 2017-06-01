@@ -1,6 +1,8 @@
+#![recursion_limit = "1024"]
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
+#[macro_use] extern crate error_chain;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate postgres;
 #[macro_use] extern crate postgres_derive;
@@ -14,6 +16,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate uuid;
 
+pub mod errors;
 pub mod models;
 
 use dotenv::dotenv;
