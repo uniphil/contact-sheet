@@ -72,8 +72,7 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Result<Template> {
 
     let (me, new) = {
         let res: Option<Person> = conn
-            .query("SELECT * FROM people WHERE people.email = $1", &[&email])
-            .expect("oops")
+            .query("SELECT * FROM people WHERE people.email = $1", &[&email])?
             .into_iter()
             .map(Person::from_row)
             .next();
@@ -82,23 +81,21 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Result<Template> {
             (me, false)
         } else {
             let new_me: Person = conn
-                .query("INSERT INTO people (email) VALUES ($1) RETURNING *", &[&email])
-                .expect("oopsie")
+                .query("INSERT INTO people (email) VALUES ($1) RETURNING *", &[&email])?
                 .into_iter()
                 .map(Person::from_row)
                 .next()
-                .expect("shoulda");
+                .ok_or("wat")?;
             (new_me, true)
         }
     };
 
     let login_key: Uuid = conn
-        .query("INSERT INTO sessions (account) VALUES ($1) RETURNING login_key", &[&me.id])
-        .expect("bleh")
+        .query("INSERT INTO sessions (account) VALUES ($1) RETURNING login_key", &[&me.id])?
         .into_iter()
         .map(|row| row.get(0))
         .next()
-        .expect("whatev");
+        .ok_or("wat")?;
 
     contacts::send_login(email, &login_key, new)?;
 
@@ -156,29 +153,38 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect> {
 #[derive(Debug)]
 struct Me(Person);
 
-impl<'a, 'r> FromRequest<'a, 'r> for Me {
-    type Error = ();
-
-    fn from_request(request: &'a Request<'r>) -> Outcome<Me, ()> {
-        let claimed_id: Option<Uuid> = request
-            .cookies()
-            .find("session")
-            .and_then(|cookie| cookie.value().parse().ok());
-
-        if let Some(claimed_uuid) = claimed_id {
-            let db = DB(DB_POOL.get().expect("couldn't get db"));
-            let res = db.conn()
-                .query("SELECT p.* FROM people p, sessions s WHERE s.account = p.id AND s.session_id = $1", &[&claimed_uuid])
-                .expect("k")
-                .into_iter()
-                .map(Person::from_row)
-                .next();
-            if let Some(me) = res {
-                return Success(Me(me))
-            }
+fn get_me(cookies: &Cookies) -> Result<Option<Me>> {
+    let cookie = match cookies.find("session") {
+        Some(c) => c,
+        None => {
+            return Ok(None)
         }
+    };
+    let claimed_id: Uuid = cookie.value().parse()
+        .chain_err(|| "Invalid session cookie")?;
 
-        Forward(())
+    let db = DB(DB_POOL.get()?);
+
+    let me = db.conn().query(
+        "SELECT p.* FROM people p, sessions s WHERE s.account = p.id AND s.session_id = $1",
+        &[&claimed_id])?
+        .into_iter()
+        .map(Person::from_row)
+        .next()
+        .map(Me);
+
+    Ok(me)
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for Me {
+    type Error = Error;
+
+    fn from_request(request: &'a Request<'r>) -> Outcome<Me, Self::Error> {
+        match get_me(request.cookies()) {
+            Ok(Some(me)) => Success(me),
+            Ok(None) => Forward(()),
+            Err(e) => Failure((Status::ServiceUnavailable, e)),
+        }
     }
 }
 
