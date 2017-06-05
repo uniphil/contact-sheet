@@ -3,6 +3,7 @@
 #![plugin(rocket_codegen)]
 
 #[macro_use] extern crate error_chain;
+#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate postgres;
 #[macro_use] extern crate postgres_derive;
@@ -15,6 +16,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate uuid;
 
+pub mod config;
 pub mod errors;
 pub mod models;
 pub mod query;
@@ -24,14 +26,11 @@ use r2d2::{Pool, Config};
 use r2d2_postgres::{TlsMode, PostgresConnectionManager};
 use reqwest::Client;
 use reqwest::header::{Authorization, Basic, Bearer};
-use rocket::config::{self, ConfigError};
 use uuid::Uuid;
 
 
 pub fn create_db_pool() -> Result<Pool<PostgresConnectionManager>> {
-    let database_url = config::active()
-        .ok_or(ConfigError::NotFound)?
-        .get_str("database_url")?;
+    let database_url: &str = &config::DATABASE_URL;
     let config = Config::default();
     let manager = PostgresConnectionManager::new(database_url, TlsMode::None)?;
     Ok(Pool::new(config, manager)?)
@@ -39,11 +38,10 @@ pub fn create_db_pool() -> Result<Pool<PostgresConnectionManager>> {
 
 
 pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> Result<()> {
-    let conf = config::active().ok_or(ConfigError::NotFound)?;
+    let host: &str = "fixme";
 
-    let mg_url = conf.get_str("mailgun_url")?;
-    let mg_key = conf.get_str("mailgun_key")?;
-    let host = conf.get_str("host")?;
+    let mg_url: &str = &config::MAILGUN_URL;
+    let mg_key: &str = &config::MAILGUN_KEY;
 
     let subject = if new { "Get started with Contact Sheet" }
                     else { "Log in to Contact Sheet" };
@@ -73,9 +71,7 @@ pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> Result<()> {
 
 pub fn create_customer(token: &str, me: &models::Person) ->
 Result<models::StripeSubscribedCustomer> {
-    let conf = config::active().ok_or(ConfigError::NotFound)?;
-
-    let stripe_sk = conf.get_str("stripe_sk")?;
+    let stripe_sk: &str = &config::STRIPE_SK;
 
     let client = Client::new()?;
     let params = [

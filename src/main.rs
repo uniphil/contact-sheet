@@ -19,13 +19,13 @@ use r2d2::{Pool, PooledConnection, GetTimeout};
 use r2d2_postgres::PostgresConnectionManager;
 use rocket::Outcome::{Success, Failure, Forward};
 use rocket::Request;
-use rocket::config::{self, ConfigError};
 use rocket::http::{Cookie, Cookies, Status};
 use rocket::request::{Form, FromRequest, Outcome};
 use rocket::response::Redirect;
 use rocket_contrib::{Template, UUID};
 use uuid::Uuid;
 
+use contacts::config;
 use contacts::errors::*;
 use contacts::models::{Person, Session, Contact, as_brand};
 
@@ -287,9 +287,7 @@ struct HomeData<'a> {
 
 #[get("/")]
 fn home(me: Me, db: DB) -> Result<Template> {
-    let stripe_public_key = config::active()
-        .ok_or(ConfigError::NotFound)?
-        .get_str("stripe_pk")?;
+    let stripe_public_key: &str = &config::STRIPE_SK;
 
     let contacts = filter!(db,
             "SELECT * FROM contacts WHERE account = $1",
