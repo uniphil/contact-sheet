@@ -307,11 +307,13 @@ fn home(me: Me, db: DB) -> Result<Template> {
     Ok(Template::render("home", &context))
 }
 
+#[derive(Serialize)]
+pub struct NoContext {}
+
 
 #[get("/", rank = 2)]
 fn index() -> Template {
-    let nothing: HashMap<(), ()> = HashMap::new();
-    Template::render("index", &nothing)
+    Template::render("index", &NoContext {})
 }
 
 
@@ -319,6 +321,21 @@ fn index() -> Template {
 fn logout(cookies: &Cookies) -> Redirect {
     cookies.remove("session");
     Redirect::to("/")
+}
+
+#[error(404)]
+fn not_found() -> Template {
+    Template::render("error-pages/404-not-found", &NoContext {})
+}
+
+#[error(500)]
+fn internal_server_error() -> Template {
+    Template::render("error-pages/500-internal-server-error", &NoContext {})
+}
+
+#[error(503)]
+fn service_unavailable() -> Template {
+    Template::render("error-pages/503-service-unavailable", &NoContext {})
 }
 
 
@@ -333,6 +350,11 @@ fn main() {
             new_contact,
             delete_contact,
             subscribe,
+        ])
+        .catch(errors![
+            not_found,
+            internal_server_error,
+            service_unavailable,
         ])
         .launch();
 }

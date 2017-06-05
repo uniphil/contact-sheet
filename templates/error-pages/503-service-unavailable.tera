@@ -1,0 +1,8 @@
+{% extends "base" %}
+
+{% block title %}Service Unavailable | {{ super() }}{% endblock title %}
+
+{% block content %}
+  <p>Sorry, something crashed at my end</p>
+  <p><code>503 Service Unavailable :/</code></p>
+{% endblock content %}

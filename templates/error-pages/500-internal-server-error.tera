@@ -1,0 +1,8 @@
+{% extends "base" %}
+
+{% block title %}Server Error | {{ super() }}{% endblock title %}
+
+{% block content %}
+  <p>Sorry, I seem to be having a problem right now</p>
+  <p><code>500 Internal Server Error :/</code></p>
+{% endblock content %}
