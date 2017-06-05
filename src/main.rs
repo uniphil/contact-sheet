@@ -1,6 +1,7 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
+#[macro_use] extern crate contacts;
 #[macro_use] extern crate error_chain;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
@@ -12,7 +13,6 @@ extern crate rocket_contrib;
 extern crate serde;
 extern crate serde_json;
 extern crate uuid;
-extern crate contacts;
 
 use std::collections::HashMap;
 use r2d2::{Pool, PooledConnection, GetTimeout};
@@ -68,34 +68,28 @@ fn login(form: Form<Email>, cookies: &Cookies, db: DB) -> Result<Template> {
     // if we start an auth flow, kill whatever session may exist
     cookies.remove("session");
 
-    let conn = db.conn();
+    let res = find!(db,
+        "SELECT * FROM PEOPLE WHERE people.email = $1",
+        &email
+    ).map(Person::from_row);
 
-    let (me, new) = {
-        let res: Option<Person> = conn
-            .query("SELECT * FROM people WHERE people.email = $1", &[&email])?
-            .into_iter()
-            .map(Person::from_row)
-            .next();
-
-        if let Some(me) = res {
-            (me, false)
-        } else {
-            let new_me: Person = conn
-                .query("INSERT INTO people (email) VALUES ($1) RETURNING *", &[&email])?
-                .into_iter()
+    let (me, new) = match res {
+        Some(me) => (me, false),
+        None => {
+            let me = find!(db,
+                    "INSERT INTO PEOPLE (email) VALUES ($1) RETURNING *",
+                    &email)
                 .map(Person::from_row)
-                .next()
-                .ok_or("wat")?;
-            (new_me, true)
+                .ok_or("could not create person")?;
+            (me, true)
         }
     };
 
-    let login_key: Uuid = conn
-        .query("INSERT INTO sessions (account) VALUES ($1) RETURNING login_key", &[&me.id])?
-        .into_iter()
-        .map(|row| row.get(0))
-        .next()
-        .ok_or("wat")?;
+    let login_key: Uuid = find!(db,
+            "INSERT INTO sessions (account) VALUES ($1) RETURNING login_key",
+            &me.id)
+        .ok_or("could not insert session")?
+        .get(0);
 
     contacts::send_login(email, &login_key, new)?;
 
@@ -119,24 +113,24 @@ fn finish_login(form: LoginKey, cookies: &Cookies, db: DB) -> Result<Redirect> {
     // if we are in auth flow, kill whatever session may exist
     cookies.remove("session");
 
-    let existing = db.conn()
-        .query("SELECT * FROM sessions WHERE login_key = $1", &[&key.into_inner()])?
-        .into_iter()
+    let session = find!(db,
+            "SELECT * FROM sessions WHERE login_key = $1",
+            &key.into_inner())
         .map(Session::from_row)
-        .next();
-
-    let session = existing.ok_or("missing session")?;
+        .ok_or("missing session")?;
 
     if session.session_id.is_some() {
         bail!("already got this session whoops");
     }
 
-    let id: Uuid = db.conn()
-        .query("UPDATE sessions SET session_id = uuid_generate_v4() WHERE login_key = $1 RETURNING session_id", &[&key.into_inner()])?
-        .into_iter()
-        .map(|row| row.get(0))
-        .next()
-        .ok_or("failed to set session_id")?;
+    let id: Uuid = find!(db,
+            "   UPDATE sessions
+                   SET session_id = uuid_generate_v4()
+                 WHERE login_key = $1
+             RETURNING session_id",
+            &key.into_inner())
+        .ok_or("failed to set session_id")?
+        .get(0);
 
     let cookie = Cookie::build("session", id.to_string())
         // .domain(blah)
@@ -165,13 +159,14 @@ fn get_me(cookies: &Cookies) -> Result<Option<Me>> {
 
     let db = DB(DB_POOL.get()?);
 
-    let me = db.conn().query(
-        "SELECT p.* FROM people p, sessions s WHERE s.account = p.id AND s.session_id = $1",
-        &[&claimed_id])?
-        .into_iter()
-        .map(Person::from_row)
-        .next()
-        .map(Me);
+    let me = find!(db,
+            "SELECT p.*
+               FROM people AS p,
+                    sessions AS s
+              WHERE s.account = p.id
+                AND s.session_id = $1",
+            &claimed_id)
+        .map(|row| Me(Person::from_row(row)));
 
     Ok(me)
 }
@@ -200,10 +195,9 @@ struct NewContactForm {
 fn new_contact(form: Form<NewContactForm>, me: Me, db: DB) -> Result<Redirect> {
     let &NewContactForm { ref name, ref info } = form.get();
 
-    db.conn().execute(
-        "INSERT INTO contacts (account, name, info) VALUES ($1, $2, $3)",
-        &[&me.0.id, &name, &info]
-    )?;
+    write!(db, "INSERT INTO contacts (account, name, info)
+                VALUES ($1, $2, $3)",
+                &me.0.id, &name, &info);
 
     Ok(Redirect::to("/"))
 }
@@ -220,16 +214,10 @@ struct DeleteContactForm {
 fn delete_contact(form: DeleteContactForm, me: Me, db: DB) -> Result<Redirect> {
     let DeleteContactForm { id, next } = form;
 
-    let n = db.conn().execute(
-        "DELETE FROM contacts WHERE id = $1 AND account = $2",
-        &[&id.into_inner(), &me.0.id]
-    )?;
+    write!(db, "DELETE FROM contacts WHERE id = $1 AND account = $2",
+               &id.into_inner(), &me.0.id);
 
-    match n {
-        0 => bail!("contact not found"),
-        1 => Ok(Redirect::to(&next.unwrap_or("/".into()))),
-        _ => bail!("wat"),
-    }
+    Ok(Redirect::to(&next.unwrap_or("/".into())))
 }
 
 #[derive(Debug, FromForm)]
@@ -257,28 +245,33 @@ pub struct StripeSubscribe {
 #[post("/subscriptions", data="<form>")]
 fn subscribe(form: Form<StripeSubscribe>, me: Me, db: DB) -> Result<Redirect> {
     let data = form.get();
-    db.conn()
-        .execute("UPDATE people SET address = ($2, $3, $4, $5, $6, $7) WHERE id = $1", &[
-            &me.0.id,
-            &data.stripeShippingName,
-            &data.stripeShippingAddressLine1,
-            &data.stripeShippingAddressZip,
-            &data.stripeShippingAddressCity,
-            &data.stripeShippingAddressState,
-            &data.stripeShippingAddressCountry,
-        ])?;
+
+    write!(db, "UPDATE people
+                   SET address = ($2, $3, $4, $5, $6, $7)
+                 WHERE id = $1",
+        &me.0.id,
+        &data.stripeShippingName,
+        &data.stripeShippingAddressLine1,
+        &data.stripeShippingAddressZip,
+        &data.stripeShippingAddressCity,
+        &data.stripeShippingAddressState,
+        &data.stripeShippingAddressCountry);
 
     let subscriber = contacts::create_customer(&data.stripeToken, &me.0)?;
-    db.conn()
-        .execute("UPDATE people SET customer = $1 WHERE id = $2",
-            &[&subscriber.id, &me.0.id])?;
+
+    write!(db, "UPDATE people SET customer = $1 WHERE id = $2",
+        &subscriber.id, &me.0.id);
 
     let ref source = subscriber.sources.data[0];
 
-    db.conn().execute(
-        "INSERT INTO cards (id, brand, country, customer, last4, name) VALUES ($1, $2, $3, $4, $5, $6)",
-        &[&source.id, &as_brand(&source.brand), &source.country, &source.customer, &source.last4, &source.name]
-    )?;
+    write!(db, "INSERT INTO cards (id, brand, country, customer, last4, name)
+                VALUES ($1, $2, $3, $4, $5, $6)",
+                &source.id,
+                &as_brand(&source.brand),
+                &source.country,
+                &source.customer,
+                &source.last4,
+                &source.name);
 
     Ok(Redirect::to("/"))
 }
@@ -298,9 +291,9 @@ fn home(me: Me, db: DB) -> Result<Template> {
         .ok_or(ConfigError::NotFound)?
         .get_str("stripe_pk")?;
 
-    let contacts = db.conn()
-        .query("SELECT * FROM contacts WHERE account = $1", &[&me.0.id])?
-        .into_iter()
+    let contacts = filter!(db,
+            "SELECT * FROM contacts WHERE account = $1",
+            &me.0.id)
         .map(Contact::from_row)
         .collect::<Vec<_>>();
 

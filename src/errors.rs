@@ -7,4 +7,11 @@ error_chain! {
         R2d2Timeout(::r2d2::GetTimeout);
         Reqwest(::reqwest::Error);
     }
+
+    errors {
+        DatabaseError(t: String) {
+            description("error while talking to the database")
+            display("database error: '{}'", t)
+        }
+    }
 }

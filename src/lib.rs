@@ -17,6 +17,7 @@ extern crate uuid;
 
 pub mod errors;
 pub mod models;
+pub mod query;
 
 use errors::*;
 use r2d2::{Pool, Config};
