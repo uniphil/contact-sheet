@@ -3,7 +3,6 @@
 #![plugin(rocket_codegen)]
 
 #[macro_use] extern crate error_chain;
-#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate postgres;
 #[macro_use] extern crate postgres_derive;
@@ -22,7 +21,7 @@ pub mod models;
 pub mod query;
 
 use errors::*;
-use r2d2::{Pool, Config};
+use r2d2::Pool;
 use r2d2_postgres::{TlsMode, PostgresConnectionManager};
 use reqwest::Client;
 use reqwest::header::{Authorization, Basic, Bearer};
@@ -30,18 +29,18 @@ use uuid::Uuid;
 
 
 pub fn create_db_pool() -> Result<Pool<PostgresConnectionManager>> {
-    let database_url: &str = &config::DATABASE_URL;
-    let config = Config::default();
+    let database_url: &str = &config::database_url();
+    let r2d2_conf = r2d2::Config::default();
     let manager = PostgresConnectionManager::new(database_url, TlsMode::None)?;
-    Ok(Pool::new(config, manager)?)
+    Ok(Pool::new(r2d2_conf, manager)?)
 }
 
 
 pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> Result<()> {
     let host: &str = "fixme";
 
-    let mg_url: &str = &config::MAILGUN_URL;
-    let mg_key: &str = &config::MAILGUN_KEY;
+    let mg_url: &str = &config::mailgun_url();
+    let mg_key: &str = &config::mailgun_key();
 
     let subject = if new { "Get started with Contact Sheet" }
                     else { "Log in to Contact Sheet" };
@@ -71,7 +70,7 @@ pub fn send_login(to: &str, login_key: &Uuid, new: bool) -> Result<()> {
 
 pub fn create_customer(token: &str, me: &models::Person) ->
 Result<models::StripeSubscribedCustomer> {
-    let stripe_sk: &str = &config::STRIPE_SK;
+    let stripe_sk: &str = &config::stripe_secret();
 
     let client = Client::new()?;
     let params = [

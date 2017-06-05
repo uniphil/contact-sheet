@@ -1,7 +1,0 @@
-[development]
-host = "http://localhost:8000"
-database_url = "postgres://postgres@localhost/contacts"
-mailgun_url = "https://api.mailgun.net/v3/sandbox47ec148bd79f4a90b8fafa5132289455.mailgun.org"
-mailgun_key = "key-69e59139997765ee2f3a423ccea21349"
-stripe_pk = "pk_test_DJiHbWJpzkotUXG1Cejx1m4J"
-stripe_sk = "sk_test_EDuyryEZLFw2V0jjYBxFmBlh"

@@ -287,7 +287,7 @@ struct HomeData<'a> {
 
 #[get("/")]
 fn home(me: Me, db: DB) -> Result<Template> {
-    let stripe_public_key: &str = &config::STRIPE_SK;
+    let stripe_public_key: &str = &config::stripe_secret();
 
     let contacts = filter!(db,
             "SELECT * FROM contacts WHERE account = $1",
@@ -338,6 +338,8 @@ fn service_unavailable() -> Template {
 
 
 fn main() {
+    config::check();
+
     rocket::ignite()
         .mount("/", routes![
             index,

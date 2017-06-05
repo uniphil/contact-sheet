@@ -1,38 +1,40 @@
 use std::env::var;
 use std::env::VarError::*;
 
-fn get(k: &str, def: &str) -> String {
-    match var(k) {
-        Ok(v) => v.into(),
-        Err(e) => {
-            if var("ENV").map(|v| &v != "production").unwrap_or(true) {
-                return def.into()
+macro_rules! config {
+    (
+        $($name:ident: $t:ty = $k:ident ($def:expr);)*
+    ) => (
+        $(pub fn $name() -> $t {
+            match var(stringify!($k)) {
+                Ok(s) => match s.parse::<$t>() {
+                    Ok(v) => v,
+                    Err(_) => panic!("could not parse env '{}={}' into {}", stringify!($k), s, stringify!($t)),
+                },
+                Err(e) => {
+                    if var("ENV").map(|v| &v != "production").unwrap_or(true) {
+                        return $def
+                    }
+                    match e {
+                        NotPresent => panic!("missing env var '{}'", stringify!($k)),
+                        NotUnicode(_) => panic!("env var '{}' is no valid unicode", stringify!($k)),
+                    }
+                },
             }
-            match e {
-                NotPresent => panic!("Missing variable '{}' from environment", k),
-                NotUnicode(_) => panic!("Invalid variable '{}' in environment", k),
-            }
+        })*
+
+        pub fn check() {
+            $($name();)*;
         }
-    }
+    )
 }
 
-lazy_static! {
-    pub static ref HOST: String =
-        get("HOST", "localhost");
-
-    pub static ref PORT: usize =
-        get("PORT", "8000").parse().unwrap();
-
-    pub static ref DATABASE_URL: String =
-        get("DATABASE_URL", "postgres://postgres@localhost/contacts");
-
-    pub static ref MAILGUN_URL: String =
-        get("MAILGUN_URL", "https://api.mailgun.net/v3/sandbox47ec148bd79f4a90b8fafa5132289455.mailgun.org");
-    pub static ref MAILGUN_KEY: String =
-        get("MAILGUN_KEY", "key-69e59139997765ee2f3a423ccea21349");
-
-    pub static ref STRIPE_PK: String =
-        get("STRIPE_PK", "pk_test_DJiHbWJpzkotUXG1Cejx1m4J");
-    pub static ref STRIPE_SK: String =
-        get("STRIPE_SK", "sk_test_EDuyryEZLFw2V0jjYBxFmBlh");
+config! {
+    host: String = HOST ("localhost".into());
+    port: u16 = PORT (8000);
+    database_url: String = DATABASE_URL ("postgres://postgres@localhost/contacts".into());
+    mailgun_url: String = MAILGUN_URL ("https://api.mailgun.net/v3/sandbox47ec148bd79f4a90b8fafa5132289455.mailgun.org".into());
+    mailgun_key: String = MAILGUN_KEY ("key-69e59139997765ee2f3a423ccea21349".into());
+    stripe_public: String = STRIPE_PK ("pk_test_DJiHbWJpzkotUXG1Cejx1m4J".into());
+    stripe_secret: String = STRIPE_SK ("sk_test_EDuyryEZLFw2V0jjYBxFmBlh".into());
 }
